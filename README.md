@@ -16,7 +16,7 @@ Relais de données de l'app Formation Lap. Une tâche planifiée récupère les 
 
 ## Fichiers publiés
 
-Sous `https://formationlap.pages.dev/ergast/f1/` (format Ergast, réponses jolpica sans modification) :
+Sous `https://formationlap-oax.pages.dev/ergast/f1/` (format Ergast, réponses jolpica sans modification) :
 
 | Fichier | Contenu |
 |---|---|
