@@ -1,0 +1,67 @@
+name: Mise à jour des données
+
+on:
+  schedule:
+    # Toutes les 15 minutes. Le script décide lui-même s'il y a quelque
+    # chose à rafraîchir : en semaine, la plupart des passages ne font rien.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Publier même si les données n'ont pas changé"
+        type: boolean
+        default: false
+
+# Deux passages ne se chevauchent jamais : ils écrivent les mêmes fichiers.
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests du plan de rafraîchissement
+        run: python3 -m unittest discover relay
+
+      - name: Récupération chez jolpica
+        id: update
+        run: python3 relay/update.py
+
+      - name: Enregistrement dans le dépôt
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Rien à enregistrer."
+          else
+            git commit -q -m "Données : passage du $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git push -q
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.update.outputs.changed == 'true' || inputs.deploy
+        with:
+          node-version: 22
+
+      - name: Publication sur Cloudflare Pages
+        if: steps.update.outputs.changed == 'true' || inputs.deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::Secrets Cloudflare absents : données enregistrées, mais pas publiées."
+            exit 0
+          fi
+          # Le projet est créé au premier passage s'il n'existe pas encore.
+          npx --yes wrangler@4.149.0 pages project list | grep -q " formationlap " \
+            || npx --yes wrangler@4.149.0 pages project create formationlap --production-branch main
+          npx --yes wrangler@4.149.0 pages deploy public --project-name formationlap --branch main --commit-dirty=true
